@@ -1,0 +1,18 @@
+# API keys and local configuration
+.env
+.env.*
+!.env.example
+
+# Virtual environments
+.analyzer_venv/
+.venv/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local test outputs
+/adobe_analysis.json
+/adobe_report.pdf
+/adobe_download.pdf
