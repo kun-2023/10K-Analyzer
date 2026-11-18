@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from .filing_extraction import FilingExtraction, FinancialValue
 
 def amount(figure: FinancialValue|None)->Decimal|None:
@@ -126,4 +126,101 @@ def calculate_financial_metrics(
     ),
     "wacc_pct": wacc_pct,
     "roic_spread_pct_points": subtract(roic_pct, wacc_pct),
+    "total_debt": total_debt,
+    "long_term_debt": amount(filing.long_term_debt),
+    "shareholders_equity": amount(filing.shareholders_equity),
+    "cash_and_cash_equivalents": cash,
+    "ending_invested_capital": invested_capital(filing),
+    "after_tax_operating_income": after_tax_operating_income,
 }
+
+
+def weighted_debt_rate_pct(filing: FilingExtraction) -> Decimal | None:
+    tranches = filing.long_term_debt_tranches
+    if not tranches:
+        return None
+
+    if len({tranche.principal.currency for tranche in tranches}) != 1:
+        return None
+
+    total_principal = Decimal("0")
+    weighted_rates = Decimal("0")
+
+    for tranche in tranches:
+        if tranche.annual_rate_pct is None:
+            return None
+
+        try:
+            principal = amount(tranche.principal)
+            rate_pct = Decimal(tranche.annual_rate_pct)
+        except InvalidOperation:
+            return None
+
+        if (
+            principal is None
+            or not principal.is_finite()
+            or principal <= 0
+            or not rate_pct.is_finite()
+        ):
+            return None
+
+        total_principal += principal
+        weighted_rates += principal * rate_pct
+
+    return ratio(weighted_rates, total_principal)
+
+
+def calculate_wacc_pct(
+    *,
+    market_cap: Decimal,
+    debt_value: Decimal,
+    beta: Decimal,
+    risk_free_rate_pct: Decimal,
+    equity_risk_premium_pct: Decimal,
+    pretax_debt_rate_pct: Decimal | None,
+    tax_rate_pct: Decimal | None,
+) -> Decimal | None:
+    if market_cap <= 0 or debt_value < 0:
+        return None
+
+    cost_of_equity_pct = risk_free_rate_pct + beta * equity_risk_premium_pct
+
+    if debt_value == 0:
+        return cost_of_equity_pct
+
+    if pretax_debt_rate_pct is None or tax_rate_pct is None:
+        return None
+    if not 0 <= tax_rate_pct <= 100:
+        return None
+
+    total_capital = market_cap + debt_value
+    after_tax_debt_rate_pct = pretax_debt_rate_pct * (1 - tax_rate_pct / 100)
+
+    return (
+        market_cap / total_capital * cost_of_equity_pct
+        + debt_value / total_capital * after_tax_debt_rate_pct
+    )
+
+
+def calculate_valuation(
+    filing: FilingExtraction,
+    metrics: dict[str, Decimal | None],
+    price: Decimal,
+) -> dict[str, Decimal | None]:
+    shares = filing.fiscal_year_end_shares_outstanding
+    market_cap = price * shares if shares is not None and shares > 0 else None
+
+    debt_and_equity = sum_amounts(market_cap, metrics.get("total_debt"))
+    cash = metrics.get("cash_and_cash_equivalents")
+    enterprise_value = subtract(debt_and_equity, cash)
+
+    ebitda = sum_amounts(
+        amount(filing.operating_income),
+        amount(filing.depreciation_and_amortization),
+    )
+
+    return {
+        "pe_ratio": ratio(price, amount(filing.diluted_eps)),
+        "ev_to_ebitda": ratio(enterprise_value, ebitda),
+        "ev_to_fcf": ratio(enterprise_value, metrics.get("free_cash_flow")),
+    }

@@ -14,17 +14,25 @@ st.set_page_config(page_title="10K Analyzer", layout="wide")
 if REPO_URL:
     st.sidebar.link_button("View GitHub repo", REPO_URL)
 
-st.title("10-K Analyzer")    
+st.title("10-K Analyzer")   
+st.subheader("Read Before Proceed") 
 st.write("""
-10-K analyzer is designed to generate a financial report based on
-key informations from one company's 10K files uploaded. The report 
+10-K analyzer is designed to provide deep insights into 10K files uploaded. 
+The app only accepts 10K files, and It only accepts 10K files from the same company.
+At most, three 10k files will be alllowed to upload.
+It's recommended to upload three consecutive years of 10K files of the same company for maximized effects.
+A report and A dashboard will be generated. The report 
 includes Company's business model, customer, competitors, competitve 
-advantages, risks and key metrics and KPIs.
+advantages, operating infrastructures and risks. In the next page, the dashboard including key metrics and KPIs will be produced.
 10-K analyzer accepts up to three 10K files of the same company.
-It will give user a deep insights of the company's financials instantneously. 
-It takes around 50s to generate the report.
-
+It takes around 80s to generate the report and the dashboard.
 """)
+st.write("""
+However, the app doesn't give ratings on the given stock. 
+Neither will it calculate intrinsic value for the stock. 
+10-K analyzer only provides critical information on which users can rely while making buy or sell decisions.
+""")
+st.write("AI can make mistakes. It's recommended that users get familiar with the company's financials and fundamentals before using the app in case of hallucinations.")
 uploaded_files=st.file_uploader(
     "Upload annual 10-K PDFs",
     type=["pdf"],

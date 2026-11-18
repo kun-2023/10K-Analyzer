@@ -1,6 +1,12 @@
 import json
+import os
+import inspect
+import tempfile
+import hashlib
 from decimal import Decimal
 from openai import OpenAI
+from functools import wraps
+from pathlib import Path
 from base64 import b64encode
 
 FINANCIAL_OVERVIEW_PROMPT="""
@@ -26,15 +32,37 @@ Write the business analysis for a 10-K report. Review Item 1 (Business),
 Item 7 (MD&A), Item 1A (Risk Factors), and relevant financial statement
 notes in the supplied filings.
 
-Use the five plain-text subsection labels below, in order. Put each
-label on its own line, followed by a blank line. Begin with Business
-Model. Use the latest supplied filing for the first four subsections.
+Use these seven plain-text subsection labels in this order:
+
+Business Model
+Operating Infrastructure
+Competitive Advantages
+Competitors
+Key Risks
+Developments by Fiscal Year
+Stock Buybacks by Fiscal Year
+
+Put each label on its own line, followed by a blank line.
+Use the latest supplied filing for the first five subsections.
+For the last two, cover only fiscal years listed in
+metrics_by_fiscal_year_end.
 
 Business Model
 Write two short paragraphs, up to 160 words total. Explain what the
 company sells, who pays, and how it earns revenue. Describe the main
 business segments and what drives each one. Include reported revenue
 mix when it helps explain the business. Cite the relevant filing sections.
+
+Operating Infrastructure
+Using the latest supplied filing, describe the physical and technology
+infrastructure that supports the company’s operations. Where relevant,
+cover facilities, distribution networks, data centers, software
+platforms, and reliance on leased assets or third-party providers.
+
+Explain which business segments this infrastructure supports. Mention
+disclosed capacity, expansion plans, or infrastructure spending when
+material. Distinguish existing facilities from planned investments.
+Cite the relevant filing sections. Keep this subsection under 120 words.
 
 Competitive Advantages
 Give up to three bullets. For each advantage, explain how it helps the
@@ -67,6 +95,7 @@ supplied operating-margin changes verbatim when quantifying them, and
 attribute a specific expense only to the portion the evidence supports.
 Cite the filing year and section for each bullet.
 
+Stock Buybacks by Fiscal Year
 After the development bullets, add one short buyback line per supplied
 year with disclosed repurchases. Report full-year shares delivered and
 cash paid, where available. Distinguish completed repurchases from
@@ -79,6 +108,76 @@ year and section for each buyback line.
 Earlier years may appear as context within a supplied year's bullet.
 """
 
+
+def _serialize_cache_value(value):
+    if isinstance(value, bytes):
+        return {"pdf_sha256": hashlib.sha256(value).hexdigest()}
+    if isinstance(value, Decimal):
+        return str(value)
+    raise TypeError(f"Unsupported cache value: {type(value).__name__}")
+
+
+def cache_report(prompt_name):
+    def decorate(function):
+        @wraps(function)
+        def wrapper(*args, **kwargs):
+            arguments = inspect.signature(function).bind(*args, **kwargs)
+            arguments.apply_defaults()
+
+            # The client contains credentials and is excluded from the cache.
+            inputs = {
+                key: value
+                for key, value in arguments.arguments.items()
+                if key != "client"
+            }
+
+            cache_input = {
+                "function": function.__name__,
+                "prompt": function.__globals__[prompt_name],
+                "inputs": inputs,
+            }
+            serialized = json.dumps(
+                cache_input,
+                sort_keys=True,
+                default=_serialize_cache_value,
+            )
+            cache_key = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+            cache_dir = Path(__file__).resolve().parents[3] / ".cache" / "reports"
+            cache_path = cache_dir / f"{cache_key}.json"
+
+            if cache_path.exists():
+                print(f"Report cache hit: {function.__name__}")
+                return json.loads(cache_path.read_text(encoding="utf-8"))
+
+            result = function(*args, **kwargs)
+
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            temporary_path = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    encoding="utf-8",
+                    dir=cache_dir,
+                    delete=False,
+                ) as temporary_file:
+                    temporary_path = Path(temporary_file.name)
+                    json.dump(result, temporary_file)
+
+                os.replace(temporary_path, cache_path)
+            finally:
+                if temporary_path is not None:
+                    temporary_path.unlink(missing_ok=True)
+
+            print(f"Report saved: {function.__name__}")
+            return result
+
+        return wrapper
+
+    return decorate
+
+
+@cache_report("FINANCIAL_OVERVIEW_PROMPT")
 def generate_financial_overview(
         comparison: dict[str, dict[str, Decimal|None]],
         *,
@@ -110,6 +209,7 @@ def generate_financial_overview(
         )
     return overview
 
+@cache_report("COMPANY_DEVELOPMENT_PROMPT")
 def generate_company_development(
         comparison: dict[str, dict[str, Decimal|None]],
         *,

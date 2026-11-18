@@ -1,6 +1,11 @@
 from base64 import b64encode
 from openai import OpenAI
 from pydantic import BaseModel
+import hashlib
+import json
+import os
+import tempfile
+from pathlib import Path
 
 
 
@@ -10,6 +15,10 @@ class FinancialValue(BaseModel):
     currency: str
     scale: int
     section: str
+
+class DebtTranche(BaseModel):
+    principal: FinancialValue
+    annual_rate_pct: str | None
 
 class FilingExtraction(BaseModel):
     company_name: str
@@ -38,6 +47,12 @@ class FilingExtraction(BaseModel):
     # Cash flow statement
     operating_cash_flow: FinancialValue|None
     capital_expenditures: FinancialValue|None
+    # real time stock price
+    trading_symbol: str|None=None
+    diluted_eps: FinancialValue | None = None
+    depreciation_and_amortization: FinancialValue | None = None
+    fiscal_year_end_shares_outstanding: int | None = None
+    long_term_debt_tranches: list[DebtTranche] | None = None
 
 
 EXTRACTION_PROMPT = """
@@ -78,7 +93,33 @@ Apply these field definitions:
   this schema.
 - Capital expenditures means cash purchases of property and equipment.
   Preserve the sign shown on the cash flow statement.
+- trading_symbol: Use the common stock ticker on the 10-K cover page.
+  If the filing lists multiple common share classes with different
+  tickers, return null.
+- diluted_eps: Use reported annual diluted earnings per common share.
+  This is a per-share value, so use scale 1.
+- depreciation_and_amortization: Use the reported consolidated full-year
+  amount, preferably from the statement of cash flows.
+- fiscal_year_end_shares_outstanding: Use common shares outstanding
+  on the fiscal year-end date. Return the full share count as an integer.
+  If the filing only gives a later cover-page count or a weighted-average
+  count, return null.
 
+- long_term_debt_tranches: Use the debt note for the filing's fiscal
+  year-end. Return each outstanding long-term borrowing separately,
+  with its reported outstanding principal and annual interest rate.
+  Express the rate in percent units, such as "4.25" for 4.25%.
+  Include outstanding long-term issues with current maturities.
+  Exclude short-term borrowings and undrawn credit facilities.
+  For floating-rate debt, use the disclosed fiscal year-end rate when
+  available. If a tranche's rate is unavailable, keep the principal
+  and return null for the rate. Return null for the list if the
+  filing does not disclose a usable tranche breakdown.
+  Return one numeric percentage per debt tranche. If the filing reports
+  a range for a group of notes, split the group only when the filing
+  discloses each tranche's outstanding principal and matching rate.
+  Otherwise keep the group principal and return null for the rate.
+  
 Extract reported figures. Leave ratio calculations to Python.
 """
 
@@ -91,6 +132,31 @@ def extract_filing(
 )-> FilingExtraction:
     if not pdf_bytes:
         raise ValueError("The Uploaded pdf is empty")
+
+    cache_dir = Path(__file__).resolve().parents[3] / ".cache" / "extractions"
+
+    configuration = json.dumps(
+        {
+            "model": model,
+            "prompt": EXTRACTION_PROMPT,
+            "schema": FilingExtraction.model_json_schema(),
+        },
+        sort_keys=True,
+    )
+
+    cache_key = hashlib.sha256(
+        pdf_bytes + configuration.encode("utf-8")
+    ).hexdigest()
+    cache_path = cache_dir / f"{cache_key}.json"
+
+    if cache_path.exists():
+        cached = FilingExtraction.model_validate_json(
+            cache_path.read_text(encoding="utf-8")
+        )
+        print(f"Extraction cache hit: {filename}")
+        return cached
+
+    print(f"Extracting through API: {filename}")
 
     encoded_pdf=b64encode(pdf_bytes).decode("ascii")
 
@@ -109,9 +175,30 @@ def extract_filing(
         store=False
     )
     result=response.output_parsed
-    if result is None:
-        raise RuntimeError(
-            f"OpenAI returned no parsed filing data (status: {response.status})."
+    if response.status != "completed" or result is None:
+      raise RuntimeError(
+            f"Extraction did not complete (status: {response.status})."
         )
+
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    temporary_path = None
+
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=cache_dir,
+            suffix=".tmp",
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            temporary_file.write(result.model_dump_json(indent=2))
+
+        os.replace(temporary_path, cache_path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+    print(f"Extraction saved: {filename}")
     return result
 

@@ -16,3 +16,5 @@ pypdf
 cryptography
 reportlab
 python-multipart
+pandas
+yfinance
