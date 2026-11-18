@@ -22,37 +22,61 @@ rebounds in chronological order. Refer to ROIC as a calculated metric.
 """
 
 COMPANY_DEVELOPMENT_PROMPT = """
-Write the Company Development section of a 10-K analysis report.
-Review Item 1 (Business), Item 7 (MD&A), and relevant notes in
-the supplied filings. Return the section without a heading.
+Write the business analysis for a 10-K report. Review Item 1 (Business),
+Item 7 (MD&A), Item 1A (Risk Factors), and relevant financial statement
+notes in the supplied filings.
 
-Write one development bullet per supplied fiscal year, oldest first,
-with at most 40 words per bullet. Prioritize material product launches,
-strategic initiatives, partnerships, market expansion, acquisitions,
-divestitures, and terminated deals. Distinguish announcements from
-completed actions. Include material events whose impact is undisclosed.
+Use the five plain-text subsection labels below, in order. Put each
+label on its own line, followed by a blank line. Begin with Business
+Model. Use the latest supplied filing for the first four subsections.
 
-Connect developments to financial results when the filing supports the
+Business Model
+Write two short paragraphs, up to 160 words total. Explain what the
+company sells, who pays, and how it earns revenue. Describe the main
+business segments and what drives each one. Include reported revenue
+mix when it helps explain the business. Cite the relevant filing sections.
+
+Competitive Advantages
+Give up to three bullets. For each advantage, explain how it helps the
+company win or retain customers and cite the supporting filing section.
+Attribute management claims and label your own inferences. If evidence
+is limited, say so.
+
+Competitors
+Identify up to five named competitors and explain where they compete
+with the company, if disclosed. If the filing describes only categories
+of competitors or substitutes, summarize those categories. Cite the
+relevant filing section.
+
+Key Risks
+Use Item 1A to identify up to three risks particularly relevant to the
+company. Explain how each could affect the business and cite the filing.
+Distinguish possible future effects from events already disclosed.
+
+Developments by Fiscal Year
+Cover the fiscal years listed in metrics_by_fiscal_year_end, oldest
+first. Write two to three bullets per year, up to 50 words each.
+Use fewer bullets when the filing discloses fewer material developments.
+
+Prioritize product launches, strategic initiatives, partnerships,
+market expansion, acquisitions, divestitures, and terminated deals.
+State what happened, whether it was announced or completed, and why it
+mattered. Connect it to financial results when the filing supports the
 link. Distinguish management's explanation from your inference. Use the
-supplied operating-margin changes verbatim when quantifying them.
-Describe a specific expense as one contributor to a margin change
-unless the filing attributes the entire change to it. Cite the fiscal
-year and relevant filing section for each bullet.
+supplied operating-margin changes verbatim when quantifying them, and
+attribute a specific expense only to the portion the evidence supports.
+Cite the filing year and section for each bullet.
 
-After the development bullets, add one short buyback line for each fiscal
-year with disclosed repurchases. These lines are outside the 40-word cap.
-Report full-year shares delivered and cash paid, where disclosed.
-Distinguish actual activity from repurchase authorizations.
+After the development bullets, add one short buyback line per supplied
+year with disclosed repurchases. Report full-year shares delivered and
+cash paid, where available. Distinguish completed repurchases from
+authorizations. Include a reported average price only when it matches
+the shares and period described. For tranche or shorter-period prices,
+label the tranche or dates and pair the price with its share count.
+Omit the price if no matching average is reported. Cite the filing
+year and section for each buyback line.
 
-Include an average price only when the filing reports it for the same
-shares and period. If prices are reported by tranche or for a shorter
-period, pair each price with the corresponding share count and label
-the tranche or period. Omit the price if no matching average is reported.
-Cite the fiscal year and filing section for each buyback line.
-
-Create development bullets and buyback lines only for fiscal years listed
-in metrics_by_fiscal_year_end. Earlier years may appear as context inside
-a supplied year's bullet.
+Earlier years may appear as context within a supplied year's bullet.
 """
 
 def generate_financial_overview(
