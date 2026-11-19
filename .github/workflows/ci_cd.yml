@@ -3,7 +3,7 @@ name: Check and deploy
 on:
   push:
     branches: [main]
-  pull_requests:
+  pull_request:
     branches: [main]
   workflow_dispatch:
 
@@ -86,6 +86,6 @@ jobs:
           sudo -n docker compose logs --tail 80 frontend
           exit 1
           REMOTE
-    - name: Remove development key
-      if: always()
-      run: rm -f ~/.ssh/deploy_key
+      - name: Remove development key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
