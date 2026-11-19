@@ -1,0 +1,91 @@
+name: Check and deploy
+
+on:
+  push:
+    branches: [main]
+  pull_requests:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lightsail-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Checl Python syntax
+        run: python3 -m compileall -q backend frontend
+
+      - name: Build backend image
+        run: docker build -f backend/Dockerfile -t analyzer-backend-check .
+
+      - name: Build frontend image
+        run: docker build -f frontend/Dockerfile -t analyzer-frontend-check .
+
+  deploy:
+    needs: check
+    if: github.ref=='refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      LIGHTSAIL_HOST: ${{ secrets.LIGHTSAIL_HOST }}
+      LIGHTSAIL_SSH_KEY: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+      LIGHTSAIL_KNOWN_HOSTS: ${{ secrets.LIGHTSAIL_KNOWN_HOSTS }}
+
+    steps:
+      - name: Configure SSH
+        run: |
+         install -d -m 700 ~/.ssh
+         printf '%s\n' "$LIGHTSAIL_SSH_KEY" > ~/.ssh/deploy_key
+         chmod 600 ~/.ssh/deploy_key
+         printf '%s\n' "$LIGHTSAIL_KNOWN_HOSTS" > ~/.ssh/known_hosts
+         chmod 600 ~/.ssh/known_hosts 
+
+      - name: Deploy checked commit
+        run: |
+          ssh \
+            -i ~/.ssh/deploy_key \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=15 \
+            "ubuntu@$LIGHTSAIL_HOST" \
+            bash -s -- "$GITHUB_SHA" <<'REMOTE'
+          set -euo pipefail
+
+          cd ~/10K-Analyzer
+          git fetch origin main
+          git switch main
+          git merge --ff-only "$1"
+
+          unset OPENAI_API_KEY
+          sudo -n docker compose config --quiet
+          sudo -n docker compose up -d --build
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent \
+              http://127.0.0.1:8502/_stcore/health; then
+              sudo -n docker compose ps
+              exit 0
+            fi
+            sleep 2
+          done
+
+          sudo -n docker compose logs --tail 80 frontend
+          exit 1
+          REMOTE
+    - name: Remove development key
+      if: always()
+      run: rm -f ~/.ssh/deploy_key
