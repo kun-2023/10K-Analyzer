@@ -40,6 +40,14 @@ uploaded_files=st.file_uploader(
     help="Upload 1-3 filings for the same company. Three consecutive years are recommended."
 )
 
+st.info("""
+If, however, the app failed to process, that's probably because the files are too
+large. You can reduce number of files uploaded. Few year would limit 
+year-over-year comparisons and ROIC calculations.
+
+
+""")
+
 valid_count=1<=len(uploaded_files)<=3
 if len(uploaded_files)>3:
     st.warning("Upload at most three PDFs.")
