@@ -1,0 +1,11 @@
+FastAPI
+Uvicorn
+OpenAI
+Pydantic
+python-multipart
+python-dotenv
+pypdf
+cryptography
+ReportLab
+pandas
+yfinance

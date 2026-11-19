@@ -1,0 +1,26 @@
+services:
+  backend:
+    image: 10k-analyzer-backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      OPENAI_API_KEY: "${OPENAI_API_KEY:?Set OPENAI_API_KEY in .env}"
+    volumes:
+      - ./.cache:/app/.cache
+    restart: unless-stopped
+
+  frontend:
+    image: 10k-analyzer-frontend
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    environment:
+      ANALYZER_API_URL: "http://backend:8000"
+      ANALYZER_REPO_URL: "${ANALYZER_REPO_URL:-}"
+    ports:
+      - "8502:8502"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    

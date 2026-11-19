@@ -119,6 +119,12 @@ Apply these field definitions:
   a range for a group of notes, split the group only when the filing
   discloses each tranche's outstanding principal and matching rate.
   Otherwise keep the group principal and return null for the rate.
+
+- fiscal_year_end_shares_outstanding: Return the full number of common
+  shares outstanding at fiscal year-end. Apply the statement's unit
+  multiplier. For example, 413 reported "in millions" means 413000000.
+  Use outstanding shares, excluding treasury shares. Return null if
+  only a later cover-page count or weighted-average count is available.
   
 Extract reported figures. Leave ratio calculations to Python.
 """
